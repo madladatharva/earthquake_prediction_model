@@ -94,6 +94,12 @@ class EarthquakeDataPreprocessor:
         """Fit and transform features."""
         X = X.copy()
         
+        # Remove datetime columns (they should be converted to numeric features in feature engineering)
+        datetime_cols = X.select_dtypes(include=['datetime64', 'datetime']).columns.tolist()
+        if datetime_cols:
+            self.logger.warning(f"Dropping datetime columns: {datetime_cols}")
+            X = X.drop(columns=datetime_cols)
+        
         # Identify column types
         numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
@@ -121,6 +127,11 @@ class EarthquakeDataPreprocessor:
     def _transform_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Transform features using fitted preprocessors."""
         X = X.copy()
+        
+        # Remove datetime columns (same as in fit_transform)
+        datetime_cols = X.select_dtypes(include=['datetime64', 'datetime']).columns.tolist()
+        if datetime_cols:
+            X = X.drop(columns=datetime_cols)
         
         # Identify column types
         numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
@@ -265,6 +276,9 @@ class EarthquakeDataPreprocessor:
             sort_idx = X[time_column].sort_values().index
             X_sorted = X.loc[sort_idx]
             y_sorted = y.loc[sort_idx]
+            
+            # Remove time column after sorting
+            X_sorted = X_sorted.drop(columns=[time_column])
             
             split_idx = int(len(X_sorted) * (1 - test_size))
             

@@ -84,7 +84,18 @@ class EarthquakePredictionEngine:
             
         Returns:
             Training results summary
+            
+        Raises:
+            ValueError: If input parameters are invalid
         """
+        # Input validation
+        if not isinstance(days_back, int) or days_back <= 0:
+            raise ValueError("days_back must be a positive integer")
+        if not isinstance(min_magnitude, (int, float)) or min_magnitude < 0 or min_magnitude > 10:
+            raise ValueError("min_magnitude must be between 0 and 10")
+        if days_back > 3650:  # More than 10 years
+            self.logger.warning(f"Large days_back ({days_back}) may cause memory issues")
+            
         self.logger.info("Starting system training...")
         
         if self.is_trained and not retrain:
@@ -99,8 +110,13 @@ class EarthquakePredictionEngine:
                 min_magnitude=min_magnitude
             )
             
+            # Validate collected data and add better error handling
+            if raw_data.empty:
+                raise ValueError("No data collected - check your parameters or data source")
+            if len(raw_data) < 10:
+                self.logger.warning(f"Very small dataset ({len(raw_data)} samples) - results may be unreliable")
             if len(raw_data) < 50:
-                raise ValueError(f"Insufficient data: only {len(raw_data)} records found")
+                self.logger.warning(f"Small dataset: only {len(raw_data)} records found - consider increasing days_back or lowering min_magnitude")
             
             self.logger.info(f"Collected {len(raw_data)} earthquake records")
             

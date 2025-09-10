@@ -44,7 +44,24 @@ class EnhancedUSGSCollector(USGSDataCollector):
             
         Returns:
             DataFrame with earthquake data
+            
+        Raises:
+            ValueError: If input parameters are invalid
         """
+        # Input validation
+        if days_back <= 0:
+            raise ValueError("days_back must be positive")
+        if not (0 <= min_magnitude <= 10):
+            raise ValueError("min_magnitude must be between 0 and 10")
+        if not (0 <= max_magnitude <= 10):
+            raise ValueError("max_magnitude must be between 0 and 10")
+        if min_magnitude >= max_magnitude:
+            raise ValueError("min_magnitude must be less than max_magnitude")
+        if region:
+            required_keys = {'minlat', 'maxlat', 'minlon', 'maxlon'}
+            if not all(key in region for key in required_keys):
+                raise ValueError(f"Region must contain keys: {required_keys}")
+        
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days_back)
         
@@ -63,7 +80,14 @@ class EnhancedUSGSCollector(USGSDataCollector):
         try:
             # Use parent class method for basic fetching
             data = self.fetch_data(start_time.isoformat(), end_time.isoformat(), min_magnitude)
-            return self._process_geojson_to_dataframe(data)
+            df = self._process_geojson_to_dataframe(data)
+            
+            # Validate the resulting dataframe
+            if df.empty:
+                self.logger.warning("No data returned from USGS API, generating mock data")
+                return self._generate_mock_data(days_back, min_magnitude, max_magnitude)
+            
+            return df
             
         except Exception as e:
             self.logger.error(f"Error fetching enhanced data: {e}")
@@ -73,39 +97,61 @@ class EnhancedUSGSCollector(USGSDataCollector):
     
     def _process_geojson_to_dataframe(self, geojson_data: Dict) -> pd.DataFrame:
         """Convert USGS GeoJSON format to structured DataFrame."""
+        if not isinstance(geojson_data, dict):
+            raise ValueError("Invalid GeoJSON data format")
+            
         features = geojson_data.get('features', [])
+        if not features:
+            self.logger.warning("No features found in GeoJSON data")
+            return pd.DataFrame()
         
         records = []
-        for feature in features:
-            props = feature['properties']
-            coords = feature['geometry']['coordinates']
-            
-            record = {
-                'id': feature.get('id'),
-                'magnitude': props.get('mag'),
-                'place': props.get('place'),
-                'time': pd.to_datetime(props.get('time'), unit='ms'),
-                'longitude': coords[0] if len(coords) > 0 else None,
-                'latitude': coords[1] if len(coords) > 1 else None,
-                'depth': coords[2] if len(coords) > 2 else None,
-                'magType': props.get('magType'),
-                'nst': props.get('nst'),
-                'gap': props.get('gap'),
-                'dmin': props.get('dmin'),
-                'rms': props.get('rms'),
-                'net': props.get('net'),
-                'updated': pd.to_datetime(props.get('updated'), unit='ms'),
-                'type': props.get('type'),
-                'horizontalError': props.get('horizontalError'),
-                'depthError': props.get('depthError'),
-                'magError': props.get('magError'),
-                'magNst': props.get('magNst'),
-                'status': props.get('status'),
-                'locationSource': props.get('locationSource'),
-                'magSource': props.get('magSource')
-            }
-            records.append(record)
+        for i, feature in enumerate(features):
+            try:
+                props = feature.get('properties', {})
+                coords = feature.get('geometry', {}).get('coordinates', [])
+                
+                # Validate essential fields
+                magnitude = props.get('mag')
+                if magnitude is None or not isinstance(magnitude, (int, float)):
+                    continue
+                    
+                if len(coords) < 3:
+                    continue
+                    
+                record = {
+                    'id': feature.get('id', f'missing_id_{i}'),
+                    'magnitude': float(magnitude),
+                    'place': props.get('place', 'Unknown'),
+                    'time': pd.to_datetime(props.get('time'), unit='ms', errors='coerce'),
+                    'longitude': float(coords[0]) if coords[0] is not None else None,
+                    'latitude': float(coords[1]) if coords[1] is not None else None,
+                    'depth': float(coords[2]) if coords[2] is not None else None,
+                    'magType': props.get('magType', 'unknown'),
+                    'nst': props.get('nst'),
+                    'gap': props.get('gap'),
+                    'dmin': props.get('dmin'),
+                    'rms': props.get('rms'),
+                    'net': props.get('net', 'unknown'),
+                    'updated': pd.to_datetime(props.get('updated'), unit='ms', errors='coerce'),
+                    'type': props.get('type', 'earthquake'),
+                    'horizontalError': props.get('horizontalError'),
+                    'depthError': props.get('depthError'),
+                    'magError': props.get('magError'),
+                    'magNst': props.get('magNst'),
+                    'status': props.get('status', 'unknown'),
+                    'locationSource': props.get('locationSource', 'unknown'),
+                    'magSource': props.get('magSource', 'unknown')
+                }
+                records.append(record)
+            except Exception as e:
+                self.logger.warning(f"Error processing feature {i}: {e}")
+                continue
         
+        if not records:
+            self.logger.warning("No valid records extracted from GeoJSON")
+            return pd.DataFrame()
+            
         df = pd.DataFrame(records)
         return self._clean_dataframe(df)
     

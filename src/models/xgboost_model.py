@@ -58,13 +58,21 @@ class XGBoostModel:
         
         self.logger.info(f"Using {cv_folds} CV folds for {n_samples} samples")
         
-        if optimize_params and n_samples >= 10:  # Only optimize if enough samples
+        if optimize_params and n_samples >= 50:  # Only optimize if enough samples
             self.model = self._optimize_hyperparameters(X_train, y_train, cv_folds)
         else:
             # Use default parameters from config
-            if n_samples < 10:
+            if n_samples < 50:
                 self.logger.info("Using simplified parameters for small dataset")
             params = Config.get_model_config('xgboost')
+            # For very small datasets, use simpler model
+            if n_samples < 30:
+                params = {
+                    'n_estimators': 20,
+                    'max_depth': 3,
+                    'learning_rate': 0.1,
+                    'random_state': self.random_state
+                }
             self.model = xgb.XGBRegressor(**params)
             self.model.fit(X_train, y_train)
         
@@ -227,19 +235,30 @@ class XGBoostModel:
             eval_metric='rmse'
         )
         
+        # Determine iterations based on sample size to prevent timeout
+        n_samples = len(y_train)
+        max_iter = min(30, max(5, n_samples // 15))  # Scale iterations with data size
+        
         # Randomized search
         random_search = RandomizedSearchCV(
             estimator=base_model,
             param_distributions=param_grid,
-            n_iter=30,  # Number of random combinations to try
+            n_iter=max_iter,  # Adaptive number of iterations
             cv=cv_folds,
             scoring='r2',
             random_state=self.random_state,
             n_jobs=Config.get_safe_n_jobs(),  # Use safe n_jobs for Windows compatibility
-            verbose=0
+            verbose=0,
+            pre_dispatch='2*n_jobs',  # Limit memory usage
+            error_score='raise'  # Fail fast on errors
         )
         
-        random_search.fit(X_train, y_train)
+        try:
+            random_search.fit(X_train, y_train)
+        finally:
+            # Force garbage collection to help with resource cleanup
+            import gc
+            gc.collect()
         
         self.best_params = random_search.best_params_
         self.logger.info(f"Best parameters: {self.best_params}")

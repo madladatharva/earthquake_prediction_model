@@ -119,13 +119,23 @@ class Config:
     @staticmethod
     def configure_joblib_backend():
         """
-        Configure joblib backend for Windows compatibility.
+        Configure joblib backend for Windows compatibility and resource management.
         """
         try:
             import joblib
+            # Set memory limit to prevent resource leaks
+            joblib.parallel.JOBLIB_MULTIPROCESSING_MAX_MEMORY = "2G"
+            
             if platform.system() == 'Windows':
                 # Use threading backend on Windows to avoid multiprocessing issues
                 joblib.parallel.DEFAULT_BACKEND = 'threading'
+            else:
+                # Configure proper resource cleanup for Unix systems
+                import multiprocessing as mp
+                mp.set_start_method('spawn', force=False)  # Safer for resource management
         except ImportError:
             # joblib not available, skip configuration
+            pass
+        except RuntimeError:
+            # start_method already set, skip
             pass

@@ -124,11 +124,13 @@ class EarthquakeFeatureEngineer:
         
         # Depth-related features
         if 'depth' in df.columns:
-            df['depth_log'] = np.log1p(np.abs(df['depth']))
-            df['depth_squared'] = df['depth'] ** 2
-            df['is_shallow'] = (df['depth'] < 70).astype(int)  # Shallow earthquakes
-            df['is_intermediate'] = ((df['depth'] >= 70) & (df['depth'] < 300)).astype(int)
-            df['is_deep'] = (df['depth'] >= 300).astype(int)
+            # Handle NaN and negative values properly
+            depth_clean = np.abs(df['depth'].fillna(0))
+            df['depth_log'] = np.log1p(depth_clean)
+            df['depth_squared'] = depth_clean ** 2
+            df['is_shallow'] = (depth_clean < 70).astype(int)  # Shallow earthquakes
+            df['is_intermediate'] = ((depth_clean >= 70) & (depth_clean < 300)).astype(int)
+            df['is_deep'] = (depth_clean >= 300).astype(int)
         
         # Regional clustering
         df = self._create_spatial_clusters(df)
@@ -207,35 +209,49 @@ class EarthquakeFeatureEngineer:
         
         # Magnitude-related features
         if 'magnitude' in df.columns:
-            df['magnitude_squared'] = df['magnitude'] ** 2
-            df['magnitude_log'] = np.log1p(df['magnitude'])
-            df['is_significant'] = (df['magnitude'] >= 5.0).astype(int)
-            df['is_major'] = (df['magnitude'] >= 6.0).astype(int)
-            df['is_great'] = (df['magnitude'] >= 7.0).astype(int)
+            # Handle NaN values and ensure positive values for log
+            mag_clean = df['magnitude'].fillna(4.0)  # Default to magnitude 4.0
+            df['magnitude_squared'] = mag_clean ** 2
+            df['magnitude_log'] = np.log1p(np.maximum(mag_clean, 0))  # Ensure non-negative
+            df['is_significant'] = (mag_clean >= 5.0).astype(int)
+            df['is_major'] = (mag_clean >= 6.0).astype(int)
+            df['is_great'] = (mag_clean >= 7.0).astype(int)
         
         # Location encoding (for categorical algorithms)
         if 'place' in df.columns:
             # Simple hash-based encoding for location
             df['location_hash'] = df['place'].astype(str).apply(hash).abs() % 1000
         
-        # Network and quality features
+        # Network and quality features  
         quality_features = ['nst', 'gap', 'dmin', 'rms', 'magNst']
         for feature in quality_features:
             if feature in df.columns:
-                df[f'{feature}_log'] = np.log1p(np.abs(df[feature].fillna(0)))
+                # Handle NaN and negative values
+                feature_clean = np.abs(df[feature].fillna(0))
+                df[f'{feature}_log'] = np.log1p(feature_clean)
         
         return df
     
-    def _haversine_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
         """Calculate haversine distance between two points on Earth."""
         R = 6371  # Earth's radius in kilometers
         
+        # Handle both scalar and array inputs
+        lat1, lon1 = np.asarray(lat1), np.asarray(lon1)
+        lat2, lon2 = np.asarray(lat2), np.asarray(lon2)
+        
+        # Convert to radians
         lat1_rad = np.radians(lat1)
         lat2_rad = np.radians(lat2)
         delta_lat = np.radians(lat2 - lat1)
         delta_lon = np.radians(lon2 - lon1)
         
-        a = (np.sin(delta_lat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(delta_lon/2)**2)
+        # Haversine formula with numerical stability
+        a = (np.sin(delta_lat/2)**2 + 
+             np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(delta_lon/2)**2)
+        
+        # Clamp a to [0,1] to avoid numerical errors in sqrt  
+        a = np.clip(a, 0, 1)
         c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
         
         return R * c
@@ -244,26 +260,42 @@ class EarthquakeFeatureEngineer:
         """Create spatial clusters using DBSCAN."""
         if len(df) < 5:  # Need minimum points for clustering
             df['spatial_cluster'] = 0
+            df['is_clustered'] = 1
             return df
             
         try:
-            # Use DBSCAN for spatial clustering  
-            coords = df[['latitude', 'longitude']].values
+            # Check for valid coordinates
+            coords = df[['latitude', 'longitude']].dropna().values
+            if len(coords) < 3:
+                # Not enough valid points for clustering
+                df['spatial_cluster'] = 0
+                df['is_clustered'] = 1
+                return df
             
             # Scale coordinates (roughly 1 degree = 111 km)
-            coords_scaled = coords * [111, 111 * np.cos(np.radians(coords[:, 0]))]
+            # Handle potential division by zero in cos calculation
+            lat_cos = np.cos(np.radians(np.clip(coords[:, 0], -89.9, 89.9)))
+            coords_scaled = coords * np.column_stack([
+                np.full(len(coords), 111), 
+                111 * lat_cos
+            ])
             
             dbscan = DBSCAN(eps=50, min_samples=3)  # 50 km radius, min 3 points
             clusters = dbscan.fit_predict(coords_scaled)
             
-            df['spatial_cluster'] = clusters
-            df['is_clustered'] = (clusters != -1).astype(int)
+            # Map clusters back to original dataframe
+            df['spatial_cluster'] = 0
+            df['is_clustered'] = 0
+            valid_indices = df[['latitude', 'longitude']].dropna().index
+            df.loc[valid_indices, 'spatial_cluster'] = clusters
+            df.loc[valid_indices, 'is_clustered'] = (clusters != -1).astype(int)
             
-        except Exception:
+        except Exception as e:
             # Fallback to simple grid-based clustering
-            df['spatial_cluster'] = (
-                (df['latitude'] // 2) * 1000 + (df['longitude'] // 2)
-            ).astype(int)
+            # Handle NaN values in coordinates
+            lat_grid = df['latitude'].fillna(0) // 2
+            lon_grid = df['longitude'].fillna(0) // 2
+            df['spatial_cluster'] = (lat_grid * 1000 + lon_grid).astype(int)
             df['is_clustered'] = 1
             
         return df

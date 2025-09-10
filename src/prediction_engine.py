@@ -34,6 +34,9 @@ class EarthquakePredictionEngine:
         Args:
             config_override: Optional configuration overrides
         """
+        # Configure joblib for Windows compatibility
+        Config.configure_joblib_backend()
+        
         self.config = Config()
         if config_override:
             for key, value in config_override.items():

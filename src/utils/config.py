@@ -2,6 +2,7 @@
 Configuration management for earthquake prediction system.
 """
 import os
+import platform
 from pathlib import Path
 from typing import Dict, Any
 
@@ -97,3 +98,34 @@ class Config:
     def get_model_config(cls, model_name: str) -> Dict[str, Any]:
         """Get configuration for specific model."""
         return cls.MODEL_PARAMS.get(model_name, {})
+    
+    @staticmethod
+    def get_safe_n_jobs() -> int:
+        """
+        Get a safe n_jobs value that works across platforms.
+        
+        Returns:
+            Safe n_jobs value for scikit-learn models
+        """
+        # On Windows, avoid using all cores to prevent _posixsubprocess error
+        if platform.system() == 'Windows':
+            # Use half the available cores, but at least 1
+            import multiprocessing
+            return max(1, multiprocessing.cpu_count() // 2)
+        else:
+            # On Unix-like systems, -1 is usually safe
+            return -1
+    
+    @staticmethod
+    def configure_joblib_backend():
+        """
+        Configure joblib backend for Windows compatibility.
+        """
+        try:
+            import joblib
+            if platform.system() == 'Windows':
+                # Use threading backend on Windows to avoid multiprocessing issues
+                joblib.parallel.DEFAULT_BACKEND = 'threading'
+        except ImportError:
+            # joblib not available, skip configuration
+            pass

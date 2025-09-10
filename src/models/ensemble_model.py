@@ -183,8 +183,11 @@ class EarthquakeEnsembleModel:
         ensemble_pred = self.predict(X_train)
         ensemble_metrics = self._calculate_metrics(y_train, ensemble_pred)
         
-        # Cross-validation for ensemble
-        cv_scores = self._ensemble_cross_validation(X_train, y_train, cv_folds)
+        # Cross-validation for ensemble (skip if cv_folds is 0 to prevent recursion)
+        if cv_folds and cv_folds > 0:
+            cv_scores = self._ensemble_cross_validation(X_train, y_train, cv_folds)
+        else:
+            cv_scores = np.array([0.0])  # Dummy scores when CV is disabled
         
         results = {
             'model_type': f'Ensemble_{ensemble_type}',
@@ -373,6 +376,15 @@ class EarthquakeEnsembleModel:
         """Perform cross-validation for the ensemble."""
         from sklearn.model_selection import KFold
         
+        # Adaptive cross-validation: reduce folds if insufficient data
+        min_samples_per_fold = 10
+        max_possible_folds = len(X) // min_samples_per_fold
+        cv_folds = min(cv_folds, max_possible_folds, 5)  # Cap at 5 folds maximum
+        
+        if cv_folds < 2:
+            self.logger.warning(f"Insufficient data for cross-validation ({len(X)} samples). Skipping CV.")
+            return np.array([0.0])  # Return dummy score
+            
         kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
         cv_scores = []
         
@@ -390,10 +402,12 @@ class EarthquakeEnsembleModel:
             temp_ensemble.initialize_models(list(self.models.keys()))
             
             try:
+                # CRITICAL FIX: Skip cross-validation in nested training to prevent infinite loop
                 temp_ensemble.train(
                     X_fold_train, y_fold_train,
                     ensemble_type=self.ensemble_type,
-                    optimize_weights=False  # Skip optimization for speed
+                    optimize_weights=False,  # Skip optimization for speed
+                    cv_folds=0  # DISABLE CV to prevent recursion
                 )
                 
                 y_pred = temp_ensemble.predict(X_fold_val)

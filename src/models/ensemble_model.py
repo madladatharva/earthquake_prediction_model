@@ -52,7 +52,7 @@ class EarthquakeEnsembleModel:
         Initialize individual models in the ensemble.
         
         Args:
-            include_models: List of models to include. If None, includes all available models.
+            include_models: List of models to include. If None, includes fast models by default.
         """
         available_models = ['random_forest', 'xgboost', 'svm']
         if NEURAL_NETWORK_AVAILABLE:
@@ -61,7 +61,8 @@ class EarthquakeEnsembleModel:
             available_models.append('lstm')
         
         if include_models is None:
-            include_models = available_models
+            # Default to faster models for better performance
+            include_models = ['random_forest', 'xgboost']  # Exclude SVM by default for speed
         
         # Filter to only available models
         include_models = [m for m in include_models if m in available_models]

@@ -67,6 +67,7 @@ class EnhancedUSGSCollector(USGSDataCollector):
             
         except Exception as e:
             self.logger.error(f"Error fetching enhanced data: {e}")
+            self.logger.info(f"Falling back to mock data generation")
             # Return mock data for development/testing when API is unavailable
             return self._generate_mock_data(days_back, min_magnitude, max_magnitude)
     
@@ -131,8 +132,12 @@ class EnhancedUSGSCollector(USGSDataCollector):
         """Generate realistic mock earthquake data for development/testing."""
         np.random.seed(Config.RANDOM_STATE)
         
-        # Generate realistic number of earthquakes (roughly 100-200 per month globally for mag 4+)
-        n_events = np.random.poisson(days_back * 5)  # ~5 events per day avg
+        # Generate realistic number of earthquakes - ensure minimum 100 samples
+        # Roughly 100-200 per month globally for mag 4+, scale with time period
+        base_events_per_day = 8  # Increased from 5 to ensure 100+ samples
+        n_events = max(100, np.random.poisson(days_back * base_events_per_day))
+        
+        self.logger.info(f"Generating {n_events} mock earthquake events for {days_back} days")
         
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days_back)

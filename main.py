@@ -24,8 +24,7 @@ def setup_logging(verbose: bool = False):
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('earthquake_prediction.log')
+            logging.StreamHandler()
         ]
     )
 

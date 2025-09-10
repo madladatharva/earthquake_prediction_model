@@ -282,14 +282,23 @@ Examples:
     # Train command
     train_parser = subparsers.add_parser('train', help='Train the prediction system')
     train_parser.add_argument('--days-back', type=int, default=365, help='Days of historical data (default: 365)')
-    train_parser.add_argument('--min-magnitude', type=float, default=4.0, help='Minimum magnitude threshold (default: 4.0)')
+    train_parser.add_argument(
+        '--min-magnitude', type=float, default=4.0, 
+        help='Minimum magnitude threshold (default: 4.0)'
+    )
     train_parser.add_argument('--retrain', action='store_true', help='Force retraining if already trained')
     
     # Predict command
     predict_parser = subparsers.add_parser('predict', help='Make predictions')
     predict_parser.add_argument('--real-time', action='store_true', help='Get real-time predictions')
-    predict_parser.add_argument('--hours-back', type=int, default=24, help='Hours of recent data for real-time mode (default: 24)')
-    predict_parser.add_argument('--min-magnitude', type=float, default=4.0, help='Minimum magnitude threshold (default: 4.0)')
+    predict_parser.add_argument(
+        '--hours-back', type=int, default=24, 
+        help='Hours of recent data for real-time mode (default: 24)'
+    )
+    predict_parser.add_argument(
+        '--min-magnitude', type=float, default=4.0, 
+        help='Minimum magnitude threshold (default: 4.0)'
+    )
     predict_parser.add_argument('--output', '-o', help='Output file for results')
     
     # Monitor command

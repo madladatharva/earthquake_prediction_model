@@ -106,6 +106,7 @@ class EarthquakeEnsembleModel:
         y_val: Optional[np.ndarray] = None,
         ensemble_type: str = 'weighted_average',
         optimize_weights: bool = True,
+        optimize_params: bool = True,
         cv_folds: int = None
     ) -> Dict[str, Any]:
         """
@@ -118,6 +119,7 @@ class EarthquakeEnsembleModel:
             y_val: Validation targets (optional)
             ensemble_type: 'weighted_average' or 'stacking'
             optimize_weights: Whether to optimize ensemble weights
+            optimize_params: Whether to optimize individual model hyperparameters
             cv_folds: Number of cross-validation folds
             
         Returns:
@@ -145,8 +147,8 @@ class EarthquakeEnsembleModel:
                     # LSTM can use validation data  
                     result = model.train(X_train, y_train, X_val, y_val)
                 else:
-                    # Other models use standard training
-                    result = model.train(X_train, y_train)
+                    # Other models use standard training with optimize_params
+                    result = model.train(X_train, y_train, optimize_params=optimize_params, cv_folds=cv_folds)
                 
                 model_results[name] = result
                 
@@ -183,8 +185,10 @@ class EarthquakeEnsembleModel:
         ensemble_pred = self.predict(X_train)
         ensemble_metrics = self._calculate_metrics(y_train, ensemble_pred)
         
-        # Cross-validation for ensemble (skip if cv_folds is 0 to prevent recursion)
-        if cv_folds and cv_folds > 0:
+        # Cross-validation for ensemble (disabled by default to prevent excessive training)
+        # Only enable for specific evaluation purposes
+        if cv_folds and cv_folds > 0 and optimize_weights:
+            # Only do CV if we're also optimizing weights (evaluation mode)
             cv_scores = self._ensemble_cross_validation(X_train, y_train, cv_folds)
         else:
             cv_scores = np.array([0.0])  # Dummy scores when CV is disabled
@@ -407,6 +411,7 @@ class EarthquakeEnsembleModel:
                     X_fold_train, y_fold_train,
                     ensemble_type=self.ensemble_type,
                     optimize_weights=False,  # Skip optimization for speed
+                    optimize_params=False,  # Skip hyperparameter optimization for speed
                     cv_folds=0  # DISABLE CV to prevent recursion
                 )
                 

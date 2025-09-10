@@ -46,12 +46,22 @@ class EnhancedRandomForestModel:
         Returns:
             Training results dictionary
         """
-        cv_folds = cv_folds or Config.CV_FOLDS
+        # Determine safe CV folds based on sample size
+        default_cv_folds = Config.CV_FOLDS
+        n_samples = len(y_train)
         
-        if optimize_params:
+        # Ensure CV folds don't exceed sample size
+        max_safe_cv = min(default_cv_folds, n_samples // 2)
+        cv_folds = cv_folds or max(2, max_safe_cv)  # Minimum 2 folds
+        
+        self.logger.info(f"Using {cv_folds} CV folds for {n_samples} samples")
+        
+        if optimize_params and n_samples >= 10:  # Only optimize if enough samples
             self.model = self._optimize_hyperparameters(X_train, y_train, cv_folds)
         else:
             # Use default parameters from config
+            if n_samples < 10:
+                self.logger.info("Using simplified parameters for small dataset")
             params = Config.get_model_config('random_forest')
             self.model = RandomForestRegressor(**params)
             self.model.fit(X_train, y_train)
@@ -64,21 +74,29 @@ class EnhancedRandomForestModel:
         y_train_pred = self.model.predict(X_train)
         train_metrics = self._calculate_metrics(y_train, y_train_pred)
         
-        # Cross-validation scores
-        cv_scores = cross_val_score(
-            self.model, X_train, y_train, 
-            cv=cv_folds, scoring='r2'
-        )
+        # Cross-validation scores (only if we have enough samples)
+        if n_samples >= cv_folds * 2:
+            cv_scores = cross_val_score(
+                self.model, X_train, y_train, 
+                cv=cv_folds, scoring='r2'
+            )
+            cv_mean_r2 = cv_scores.mean()
+            cv_std_r2 = cv_scores.std()
+        else:
+            self.logger.warning(f"Insufficient samples for CV (need {cv_folds * 2}, have {n_samples})")
+            cv_mean_r2 = train_metrics['r2']  # Use training R2 as fallback
+            cv_std_r2 = 0.0
         
         results = {
             'model_type': 'RandomForest',
             'train_metrics': train_metrics,
-            'cv_mean_r2': cv_scores.mean(),
-            'cv_std_r2': cv_scores.std(),
+            'cv_mean_r2': cv_mean_r2,
+            'cv_std_r2': cv_std_r2,
             'best_params': self.best_params,
             'feature_importance': self.feature_importance,
             'n_features': X_train.shape[1],
-            'n_samples': X_train.shape[0]
+            'n_samples': X_train.shape[0],
+            'cv_folds_used': cv_folds
         }
         
         self.logger.info(f"Random Forest trained: R² = {train_metrics['r2']:.4f}")

@@ -121,7 +121,7 @@ class EarthquakePredictionEngine:
             
             # 5. Train ensemble model
             self.logger.info("Training ensemble model...")
-            self.ensemble_model.initialize_models(['random_forest', 'xgboost', 'svm'])  # Skip neural_network for speed
+            self.ensemble_model.initialize_models(['random_forest', 'xgboost'])  # Fast models only by default
             
             training_results = self.ensemble_model.train(
                 X_train, y_train,

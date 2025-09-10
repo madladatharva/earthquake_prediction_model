@@ -99,8 +99,24 @@ class EarthquakePredictionEngine:
                 min_magnitude=min_magnitude
             )
             
-            if len(raw_data) < 50:
-                raise ValueError(f"Insufficient data: only {len(raw_data)} records found")
+            # Enhanced validation for minimum samples
+            min_required_samples = 100
+            if len(raw_data) < min_required_samples:
+                self.logger.warning(f"Insufficient data: only {len(raw_data)} records found, need {min_required_samples}")
+                
+                # Try to collect more data with relaxed parameters
+                self.logger.info("Attempting to collect more data with relaxed parameters...")
+                extended_data = self.data_collector.fetch_enhanced_data(
+                    days_back=days_back * 4,  # Extend time period
+                    min_magnitude=max(3.0, min_magnitude - 1.0)  # Lower magnitude threshold
+                )
+                
+                if len(extended_data) >= min_required_samples:
+                    raw_data = extended_data
+                    self.logger.info(f"Successfully collected {len(raw_data)} records with relaxed parameters")
+                else:
+                    self.logger.error(f"Still insufficient data: {len(extended_data)} < {min_required_samples}")
+                    raise ValueError(f"Insufficient earthquake data for reliable training: {len(extended_data)} < {min_required_samples} samples required")
             
             self.logger.info(f"Collected {len(raw_data)} earthquake records")
             

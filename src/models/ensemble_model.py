@@ -17,11 +17,23 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from utils.config import Config
 
-# Import individual models
+# Import individual models with optional dependencies
 from .random_forest_model import EnhancedRandomForestModel
 from .xgboost_model import XGBoostModel
-from .neural_network_model import EnhancedNeuralNetworkModel
 from .svm_model import SVMEarthquakeModel
+
+# Optional heavy dependencies
+try:
+    from .neural_network_model import EnhancedNeuralNetworkModel
+    NEURAL_NETWORK_AVAILABLE = True
+except ImportError:
+    NEURAL_NETWORK_AVAILABLE = False
+
+try:
+    from .lstm_model import LSTMEarthquakeModel
+    LSTM_AVAILABLE = True
+except ImportError:
+    LSTM_AVAILABLE = False
 
 class EarthquakeEnsembleModel:
     """Ensemble model combining multiple ML approaches for earthquake prediction."""
@@ -42,10 +54,17 @@ class EarthquakeEnsembleModel:
         Args:
             include_models: List of models to include. If None, includes all available models.
         """
-        available_models = ['random_forest', 'xgboost', 'neural_network', 'svm']
+        available_models = ['random_forest', 'xgboost', 'svm']
+        if NEURAL_NETWORK_AVAILABLE:
+            available_models.append('neural_network')
+        if LSTM_AVAILABLE:
+            available_models.append('lstm')
         
         if include_models is None:
             include_models = available_models
+        
+        # Filter to only available models
+        include_models = [m for m in include_models if m in available_models]
         
         # Initialize requested models
         if 'random_forest' in include_models:
@@ -54,8 +73,12 @@ class EarthquakeEnsembleModel:
         if 'xgboost' in include_models:
             self.models['xgboost'] = XGBoostModel(self.random_state)
             
-        if 'neural_network' in include_models:
+        if 'neural_network' in include_models and NEURAL_NETWORK_AVAILABLE:
             self.models['neural_network'] = EnhancedNeuralNetworkModel(self.random_state)
+        
+        if 'lstm' in include_models and LSTM_AVAILABLE:
+            from .lstm_model import LSTMEarthquakeModel
+            self.models['lstm'] = LSTMEarthquakeModel(self.random_state)
             
         if 'svm' in include_models:
             self.models['svm'] = SVMEarthquakeModel(self.random_state)
@@ -69,6 +92,10 @@ class EarthquakeEnsembleModel:
             self.ensemble_weights = {k: v/total_weight for k, v in active_weights.items()}
         
         self.logger.info(f"Initialized {len(self.models)} models: {list(self.models.keys())}")
+        if not NEURAL_NETWORK_AVAILABLE:
+            self.logger.warning("Neural network model not available (missing tensorflow)")
+        if not LSTM_AVAILABLE:
+            self.logger.warning("LSTM model not available (missing tensorflow or other dependencies)")
     
     def train(
         self, 
@@ -430,19 +457,26 @@ class EarthquakeEnsembleModel:
         # Load individual models
         self.models = {}
         for name, model_path in ensemble_data['model_paths'].items():
-            if name == 'random_forest':
-                model = EnhancedRandomForestModel(self.random_state)
-            elif name == 'xgboost':
-                model = XGBoostModel(self.random_state)
-            elif name == 'neural_network':
-                model = EnhancedNeuralNetworkModel(self.random_state)
-            elif name == 'svm':
-                model = SVMEarthquakeModel(self.random_state)
-            else:
-                continue
-            
-            model.load_model(model_path)
-            self.models[name] = model
+            try:
+                if name == 'random_forest':
+                    model = EnhancedRandomForestModel(self.random_state)
+                elif name == 'xgboost':
+                    model = XGBoostModel(self.random_state)
+                elif name == 'neural_network' and NEURAL_NETWORK_AVAILABLE:
+                    model = EnhancedNeuralNetworkModel(self.random_state)
+                elif name == 'lstm' and LSTM_AVAILABLE:
+                    from .lstm_model import LSTMEarthquakeModel
+                    model = LSTMEarthquakeModel(self.random_state)
+                elif name == 'svm':
+                    model = SVMEarthquakeModel(self.random_state)
+                else:
+                    self.logger.warning(f"Model {name} not available, skipping")
+                    continue
+                
+                model.load_model(model_path)
+                self.models[name] = model
+            except Exception as e:
+                self.logger.warning(f"Failed to load model {name}: {e}")
         
         # Load ensemble metadata
         self.ensemble_weights = ensemble_data['ensemble_weights']

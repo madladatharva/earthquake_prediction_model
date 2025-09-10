@@ -305,13 +305,36 @@ class EarthquakeModelEvaluator:
         y: np.ndarray,
         cv_folds: int = None
     ) -> Dict[str, Any]:
-        """Perform cross-validation evaluation."""
+        """Perform cross-validation evaluation with adaptive fold handling."""
         cv_folds = cv_folds or Config.CV_FOLDS
         
-        # Time series cross-validation
-        tscv = TimeSeriesSplit(n_splits=cv_folds)
+        # Adaptive cross-validation: adjust folds based on sample size
+        n_samples = len(X)
         
-        cv_results = {}
+        # Ensure we have enough samples for cross-validation
+        # TimeSeriesSplit requires at least (n_splits + 1) samples
+        max_folds = min(cv_folds, max(2, n_samples // 3))  # At least 3 samples per fold
+        
+        if max_folds < 2:
+            self.logger.warning(f"Insufficient data for cross-validation: {n_samples} samples. Skipping CV.")
+            return {
+                'error': f'Insufficient data for cross-validation: {n_samples} samples (minimum 6 required)',
+                'n_samples': n_samples,
+                'required_min_samples': 6
+            }
+        
+        # Use the adaptive number of folds
+        actual_folds = max_folds
+        self.logger.info(f"Using {actual_folds} CV folds for {n_samples} samples (requested: {cv_folds})")
+        
+        # Time series cross-validation
+        tscv = TimeSeriesSplit(n_splits=actual_folds)
+        
+        cv_results = {
+            'n_splits_requested': cv_folds,
+            'n_splits_used': actual_folds,
+            'n_samples': n_samples
+        }
         
         # Different metrics
         scoring_metrics = ['r2', 'neg_mean_squared_error', 'neg_mean_absolute_error']
@@ -335,6 +358,7 @@ class EarthquakeModelEvaluator:
                 
             except Exception as e:
                 self.logger.warning(f"CV metric {metric} failed: {e}")
+                cv_results[f'{metric}_error'] = str(e)
         
         return cv_results
     

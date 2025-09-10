@@ -20,12 +20,18 @@ from utils.visualization import EarthquakeVisualization
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""
     level = logging.DEBUG if verbose else logging.INFO
+    
+    # Create logs directory if it doesn't exist
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Configure logging with proper file path
     logging.basicConfig(
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler('earthquake_prediction.log')
+            logging.FileHandler(log_dir / 'earthquake_prediction.log')
         ]
     )
 

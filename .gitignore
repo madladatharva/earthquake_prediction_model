@@ -153,3 +153,15 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Earthquake prediction system specific log files
+logs/
+earthquake_prediction.log
+earthquake_prediction.log.*
+training.log
+prediction.log
+system.log
+
+# Additional pycache patterns
+src/__pycache__/
+src/**/__pycache__/

@@ -99,8 +99,12 @@ class EarthquakePredictionEngine:
                 min_magnitude=min_magnitude
             )
             
-            if len(raw_data) < 50:
-                raise ValueError(f"Insufficient data: only {len(raw_data)} records found")
+            if len(raw_data) < 20:  # Increased minimum requirement with better error message
+                error_msg = f"Insufficient data for reliable ML training: only {len(raw_data)} records found. "
+                error_msg += f"Minimum recommended: 20+ samples for basic training, 100+ for production use. "
+                error_msg += "Consider: 1) Increasing days_back parameter, 2) Lowering min_magnitude threshold, "
+                error_msg += "3) Expanding geographic region, or 4) Checking API connectivity."
+                raise ValueError(error_msg)
             
             self.logger.info(f"Collected {len(raw_data)} earthquake records")
             
@@ -121,7 +125,18 @@ class EarthquakePredictionEngine:
             
             # 5. Train ensemble model
             self.logger.info("Training ensemble model...")
-            self.ensemble_model.initialize_models(['random_forest', 'xgboost', 'svm'])  # Skip neural_network for speed
+            
+            # Adaptive model selection based on data size and resources
+            if len(X_train) > 200:
+                # For larger datasets, skip SVM as it's computationally expensive
+                model_list = ['random_forest', 'xgboost']
+                self.logger.info(f"Large dataset ({len(X_train)} samples): using fast models (RF, XGBoost)")
+            else:
+                # For smaller datasets, include SVM but skip neural networks for speed
+                model_list = ['random_forest', 'xgboost', 'svm']
+                self.logger.info(f"Medium dataset ({len(X_train)} samples): using RF, XGBoost, SVM")
+            
+            self.ensemble_model.initialize_models(model_list)
             
             training_results = self.ensemble_model.train(
                 X_train, y_train,

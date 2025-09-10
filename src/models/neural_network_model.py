@@ -257,8 +257,26 @@ class EnhancedNeuralNetworkModel:
         return model
     
     def _cross_validate(self, X: np.ndarray, y: np.ndarray, cv_folds: int = 5) -> np.ndarray:
-        """Perform cross-validation to assess model performance."""
-        kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+        """Perform cross-validation to assess model performance with adaptive fold handling."""
+        n_samples = len(X)
+        
+        # Adaptive cross-validation: adjust folds based on sample size
+        # Ensure we have enough samples for each fold (at least 5 samples per fold)
+        max_folds = min(cv_folds, max(2, n_samples // 5))
+        
+        if max_folds < 2:
+            self.logger.warning(f"Insufficient data for cross-validation: {n_samples} samples. Using single score.")
+            # Return a single score based on the full dataset (no cross-validation)
+            temp_model = self._build_model(X.shape[1])
+            temp_model.fit(X, y, epochs=10, batch_size=min(32, len(X)), verbose=0)
+            y_pred = temp_model.predict(X, verbose=0)
+            r2 = r2_score(y, y_pred.ravel())
+            return np.array([r2])  # Return as array for consistency
+        
+        actual_folds = max_folds
+        self.logger.info(f"Using {actual_folds} CV folds for {n_samples} samples (requested: {cv_folds})")
+        
+        kfold = KFold(n_splits=actual_folds, shuffle=True, random_state=self.random_state)
         cv_scores = []
         
         for train_idx, val_idx in kfold.split(X):
@@ -276,7 +294,7 @@ class EnhancedNeuralNetworkModel:
             fold_model.fit(
                 X_fold_train, y_fold_train,
                 epochs=50,  # Fewer epochs for CV
-                batch_size=32,
+                batch_size=min(32, len(X_fold_train)),  # Adaptive batch size
                 validation_data=(X_fold_val, y_fold_val),
                 verbose=0,
                 callbacks=[EarlyStopping(patience=10, restore_best_weights=True)]

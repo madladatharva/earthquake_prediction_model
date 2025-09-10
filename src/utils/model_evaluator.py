@@ -99,6 +99,27 @@ class EarthquakeModelEvaluator:
         
         return results
     
+    def calculate_metrics(
+        self, 
+        y_true: np.ndarray, 
+        y_pred: np.ndarray,
+        model_name: str = "Model"
+    ) -> Dict[str, float]:
+        """
+        Calculate regression metrics for predictions.
+        
+        Args:
+            y_true: True values
+            y_pred: Predicted values
+            model_name: Name for identification
+            
+        Returns:
+            Dictionary of regression metrics
+        """
+        metrics = self._calculate_regression_metrics(y_true, y_pred)
+        metrics['model_name'] = model_name
+        return metrics
+    
     def compare_models(
         self,
         model_results: Dict[str, Dict[str, Any]]

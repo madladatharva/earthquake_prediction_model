@@ -369,10 +369,24 @@ class EarthquakeEnsembleModel:
         y: np.ndarray, 
         cv_folds: int
     ) -> np.ndarray:
-        """Perform cross-validation for the ensemble."""
+        """Perform cross-validation for the ensemble with adaptive fold handling."""
         from sklearn.model_selection import KFold
         
-        kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
+        # Adaptive cross-validation: adjust folds based on sample size
+        n_samples = len(X)
+        max_folds = min(cv_folds, max(2, n_samples // 10))  # At least 10 samples per fold
+        
+        if max_folds < 2:
+            self.logger.warning(f"Insufficient data for ensemble cross-validation: {n_samples} samples. Skipping.")
+            # Return a single score based on the current ensemble
+            ensemble_pred = self.predict(X)
+            r2 = r2_score(y, ensemble_pred)
+            return np.array([r2])
+        
+        actual_folds = max_folds
+        self.logger.info(f"Using {actual_folds} CV folds for ensemble validation (requested: {cv_folds})")
+        
+        kfold = KFold(n_splits=actual_folds, shuffle=True, random_state=self.random_state)
         cv_scores = []
         
         for train_idx, val_idx in kfold.split(X):
@@ -384,17 +398,49 @@ class EarthquakeEnsembleModel:
                 X_fold_train, X_fold_val = X[train_idx], X[val_idx]
                 y_fold_train, y_fold_val = y[train_idx], y[val_idx]
             
-            # Create temporary ensemble for this fold
+            # Create temporary ensemble for this fold - but train without ensemble CV to avoid recursion
             temp_ensemble = EarthquakeEnsembleModel(self.random_state)
             temp_ensemble.initialize_models(list(self.models.keys()))
             
             try:
-                temp_ensemble.train(
-                    X_fold_train, y_fold_train,
-                    ensemble_type=self.ensemble_type,
-                    optimize_weights=False  # Skip optimization for speed
-                )
+                # Train individual models without ensemble cross-validation (to avoid recursion)
+                model_results = {}
+                individual_predictions = {}
                 
+                for name, model_class in temp_ensemble.models.items():
+                    try:
+                        if name == 'neural_network' or name == 'lstm':
+                            result = model_class.train(X_fold_train, y_fold_train, None, None)
+                        else:
+                            result = model_class.train(X_fold_train, y_fold_train)
+                        
+                        model_results[name] = result
+                        individual_predictions[name] = model_class.predict(X_fold_train)
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Model {name} failed in CV fold: {e}")
+                        # Remove failed model from temporary ensemble
+                        if name in temp_ensemble.models:
+                            del temp_ensemble.models[name]
+                        if name in temp_ensemble.ensemble_weights:
+                            del temp_ensemble.ensemble_weights[name]
+                
+                if not temp_ensemble.models:
+                    self.logger.warning("All models failed in CV fold, skipping...")
+                    continue
+                
+                # Set up ensemble without recursive cross-validation
+                if temp_ensemble.ensemble_type == 'weighted_average':
+                    # Use simple average weights or optimize without CV
+                    if len(individual_predictions) > 1:
+                        temp_ensemble.ensemble_weights = temp_ensemble._optimize_weights(individual_predictions, y_fold_train)
+                    else:
+                        # Single model case
+                        temp_ensemble.ensemble_weights = {list(temp_ensemble.models.keys())[0]: 1.0}
+                
+                temp_ensemble.is_fitted = True
+                
+                # Make prediction on validation fold
                 y_pred = temp_ensemble.predict(X_fold_val)
                 r2 = r2_score(y_fold_val, y_pred)
                 cv_scores.append(r2)

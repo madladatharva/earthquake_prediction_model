@@ -127,14 +127,18 @@ class EarthquakePredictionEngine:
             self.logger.info("Training ensemble model...")
             
             # Adaptive model selection based on data size and resources
-            if len(X_train) > 200:
+            if len(X_train) > 300:
                 # For larger datasets, skip SVM as it's computationally expensive
                 model_list = ['random_forest', 'xgboost']
                 self.logger.info(f"Large dataset ({len(X_train)} samples): using fast models (RF, XGBoost)")
+            elif len(X_train) > 150:
+                # For medium datasets, include SVM but skip neural networks for speed
+                model_list = ['random_forest', 'xgboost']
+                self.logger.info(f"Medium dataset ({len(X_train)} samples): using fast models (RF, XGBoost)")
             else:
-                # For smaller datasets, include SVM but skip neural networks for speed
-                model_list = ['random_forest', 'xgboost', 'svm']
-                self.logger.info(f"Medium dataset ({len(X_train)} samples): using RF, XGBoost, SVM")
+                # For smaller datasets, use just RF for speed
+                model_list = ['random_forest']
+                self.logger.info(f"Small dataset ({len(X_train)} samples): using single fast model (RF)")
             
             self.ensemble_model.initialize_models(model_list)
             

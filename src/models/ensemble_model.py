@@ -106,6 +106,7 @@ class EarthquakeEnsembleModel:
         y_val: Optional[np.ndarray] = None,
         ensemble_type: str = 'weighted_average',
         optimize_weights: bool = True,
+        optimize_params: bool = True,
         cv_folds: int = None
     ) -> Dict[str, Any]:
         """
@@ -118,6 +119,7 @@ class EarthquakeEnsembleModel:
             y_val: Validation targets (optional)
             ensemble_type: 'weighted_average' or 'stacking'
             optimize_weights: Whether to optimize ensemble weights
+            optimize_params: Whether to optimize individual model hyperparameters
             cv_folds: Number of cross-validation folds
             
         Returns:
@@ -139,14 +141,14 @@ class EarthquakeEnsembleModel:
             
             try:
                 if name == 'neural_network':
-                    # Neural network can use validation data
-                    result = model.train(X_train, y_train, X_val, y_val)
+                    # Neural network can use validation data and architecture optimization
+                    result = model.train(X_train, y_train, X_val, y_val, optimize_architecture=optimize_params)
                 elif name == 'lstm':
-                    # LSTM can use validation data  
+                    # LSTM can use validation data
                     result = model.train(X_train, y_train, X_val, y_val)
                 else:
-                    # Other models use standard training
-                    result = model.train(X_train, y_train)
+                    # Other models use standard training with optimize_params
+                    result = model.train(X_train, y_train, optimize_params=optimize_params, cv_folds=cv_folds)
                 
                 model_results[name] = result
                 
@@ -183,8 +185,10 @@ class EarthquakeEnsembleModel:
         ensemble_pred = self.predict(X_train)
         ensemble_metrics = self._calculate_metrics(y_train, ensemble_pred)
         
-        # Cross-validation for ensemble (skip if cv_folds is 0 to prevent recursion)
-        if cv_folds and cv_folds > 0:
+        # Cross-validation for ensemble (disabled by default to prevent excessive training)
+        # Only enable for specific evaluation purposes
+        if cv_folds and cv_folds > 0 and optimize_weights:
+            # Only do CV if we're also optimizing weights (evaluation mode)
             cv_scores = self._ensemble_cross_validation(X_train, y_train, cv_folds)
         else:
             cv_scores = np.array([0.0])  # Dummy scores when CV is disabled
@@ -280,16 +284,28 @@ class EarthquakeEnsembleModel:
     def _predict_weighted_average(self, X: np.ndarray) -> np.ndarray:
         """Make weighted average predictions."""
         predictions = []
-        weights = []
+        total_weight = 0
         
         for name, model in self.models.items():
-            pred = model.predict(X)
-            weight = self.ensemble_weights.get(name, 0)
-            
-            predictions.append(pred * weight)
-            weights.append(weight)
+            try:
+                pred = model.predict(X)
+                weight = self.ensemble_weights.get(name, 0)
+                
+                predictions.append(pred * weight)
+                total_weight += weight
+                
+            except Exception as e:
+                self.logger.warning(f"Model {name} failed prediction: {e}")
+                continue
         
-        return np.sum(predictions, axis=0)
+        if not predictions:
+            raise ValueError("All ensemble models failed to make predictions")
+        
+        # Normalize if some models failed
+        if total_weight > 0:
+            return np.sum(predictions, axis=0) / total_weight
+        else:
+            return np.mean(predictions, axis=0)
     
     def _predict_stacking(self, X: np.ndarray) -> np.ndarray:
         """Make stacking predictions using meta-model."""
@@ -298,9 +314,17 @@ class EarthquakeEnsembleModel:
         
         # Get base model predictions
         base_predictions = []
-        for model in self.models.values():
-            pred = model.predict(X)
-            base_predictions.append(pred)
+        for name, model in self.models.items():
+            try:
+                pred = model.predict(X)
+                base_predictions.append(pred)
+            except Exception as e:
+                self.logger.warning(f"Model {name} failed prediction for stacking: {e}")
+                # Add zeros as fallback for failed model
+                base_predictions.append(np.zeros(len(X)))
+        
+        if not base_predictions:
+            raise ValueError("All base models failed for stacking prediction")
         
         # Stack predictions as features for meta-model
         base_predictions = np.column_stack(base_predictions)
@@ -407,6 +431,7 @@ class EarthquakeEnsembleModel:
                     X_fold_train, y_fold_train,
                     ensemble_type=self.ensemble_type,
                     optimize_weights=False,  # Skip optimization for speed
+                    optimize_params=False,  # Skip hyperparameter optimization for speed
                     cv_folds=0  # DISABLE CV to prevent recursion
                 )
                 

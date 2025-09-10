@@ -39,6 +39,34 @@ class EarthquakeFeatureEngineer:
         # Make a copy to avoid modifying original data
         df_features = df.copy()
         
+        # Handle missing values in critical columns
+        # For numeric columns, ensure proper type conversion, then forward fill and backward fill
+        numeric_cols = ['latitude', 'longitude', 'depth', 'magnitude']
+        for col in numeric_cols:
+            if col in df_features.columns:
+                # Convert to numeric, coercing errors to NaN
+                df_features[col] = pd.to_numeric(df_features[col], errors='coerce')
+                df_features[col] = df_features[col].ffill().bfill()
+                # If still NaN (all values were NaN), use reasonable defaults
+                if df_features[col].isna().all():
+                    defaults = {
+                        'latitude': 0.0,
+                        'longitude': 0.0, 
+                        'depth': 10.0,
+                        'magnitude': 5.0
+                    }
+                    df_features[col] = defaults.get(col, 0.0)
+        
+        # Handle time column
+        if 'time' in df_features.columns:
+            df_features['time'] = pd.to_datetime(df_features['time'], errors='coerce')
+            # Fill NaT values with interpolation or reasonable defaults
+            if df_features['time'].isna().any():
+                df_features['time'] = df_features['time'].ffill().bfill()
+                if df_features['time'].isna().all():
+                    # If all times are NaN, create a time series
+                    df_features['time'] = pd.date_range(start='2024-01-01', periods=len(df_features), freq='1H')
+        
         # Temporal features (do this first, before removing time columns)
         df_features = self._create_temporal_features(df_features)
         

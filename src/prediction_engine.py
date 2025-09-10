@@ -102,7 +102,10 @@ class EarthquakePredictionEngine:
             # Enhanced validation for minimum samples
             min_required_samples = 100
             if len(raw_data) < min_required_samples:
-                self.logger.warning(f"Insufficient data: only {len(raw_data)} records found, need {min_required_samples}")
+                self.logger.warning(
+                    f"Insufficient data: only {len(raw_data)} records found, "
+                    f"need {min_required_samples}"
+                )
                 
                 # Try to collect more data with relaxed parameters
                 self.logger.info("Attempting to collect more data with relaxed parameters...")

@@ -141,10 +141,10 @@ class EarthquakeEnsembleModel:
             
             try:
                 if name == 'neural_network':
-                    # Neural network can use validation data
-                    result = model.train(X_train, y_train, X_val, y_val)
+                    # Neural network can use validation data and architecture optimization
+                    result = model.train(X_train, y_train, X_val, y_val, optimize_architecture=optimize_params)
                 elif name == 'lstm':
-                    # LSTM can use validation data  
+                    # LSTM can use validation data
                     result = model.train(X_train, y_train, X_val, y_val)
                 else:
                     # Other models use standard training with optimize_params
@@ -284,16 +284,28 @@ class EarthquakeEnsembleModel:
     def _predict_weighted_average(self, X: np.ndarray) -> np.ndarray:
         """Make weighted average predictions."""
         predictions = []
-        weights = []
+        total_weight = 0
         
         for name, model in self.models.items():
-            pred = model.predict(X)
-            weight = self.ensemble_weights.get(name, 0)
-            
-            predictions.append(pred * weight)
-            weights.append(weight)
+            try:
+                pred = model.predict(X)
+                weight = self.ensemble_weights.get(name, 0)
+                
+                predictions.append(pred * weight)
+                total_weight += weight
+                
+            except Exception as e:
+                self.logger.warning(f"Model {name} failed prediction: {e}")
+                continue
         
-        return np.sum(predictions, axis=0)
+        if not predictions:
+            raise ValueError("All ensemble models failed to make predictions")
+        
+        # Normalize if some models failed
+        if total_weight > 0:
+            return np.sum(predictions, axis=0) / total_weight
+        else:
+            return np.mean(predictions, axis=0)
     
     def _predict_stacking(self, X: np.ndarray) -> np.ndarray:
         """Make stacking predictions using meta-model."""
@@ -302,9 +314,17 @@ class EarthquakeEnsembleModel:
         
         # Get base model predictions
         base_predictions = []
-        for model in self.models.values():
-            pred = model.predict(X)
-            base_predictions.append(pred)
+        for name, model in self.models.items():
+            try:
+                pred = model.predict(X)
+                base_predictions.append(pred)
+            except Exception as e:
+                self.logger.warning(f"Model {name} failed prediction for stacking: {e}")
+                # Add zeros as fallback for failed model
+                base_predictions.append(np.zeros(len(X)))
+        
+        if not base_predictions:
+            raise ValueError("All base models failed for stacking prediction")
         
         # Stack predictions as features for meta-model
         base_predictions = np.column_stack(base_predictions)

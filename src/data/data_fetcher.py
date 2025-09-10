@@ -180,7 +180,7 @@ class EnhancedUSGSCollector(USGSDataCollector):
         
         # Generate realistic number of earthquakes - ensure minimum 100 samples
         # Roughly 100-200 per month globally for mag 4+, scale with time period
-        base_events_per_day = 8  # Increased from 5 to ensure 100+ samples
+        base_events_per_day = max(8, 100 // max(1, days_back))  # Ensure minimum events per day
         n_events = max(100, np.random.poisson(days_back * base_events_per_day))
         
         self.logger.info(f"Generating {n_events} mock earthquake events for {days_back} days")

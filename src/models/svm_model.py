@@ -187,7 +187,7 @@ class SVMEarthquakeModel:
             cv=cv_folds,
             scoring='r2',
             random_state=self.random_state,
-            n_jobs=-1,
+            n_jobs=Config.get_safe_n_jobs(),  # Use safe n_jobs for Windows compatibility
             verbose=0
         )
         

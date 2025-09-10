@@ -202,8 +202,13 @@ class EarthquakeModelEvaluator:
         if time_column is not None:
             # Sort by time
             sort_indices = np.argsort(time_column)
-            X_sorted = X[sort_indices]
-            y_sorted = y[sort_indices]
+            # Fix pandas indexing issue: use iloc for row selection with integer indices
+            if hasattr(X, 'iloc'):
+                X_sorted = X.iloc[sort_indices]
+                y_sorted = y.iloc[sort_indices] if hasattr(y, 'iloc') else y[sort_indices]
+            else:
+                X_sorted = X[sort_indices]
+                y_sorted = y[sort_indices]
         else:
             # Use data as-is
             X_sorted = X
@@ -229,10 +234,17 @@ class EarthquakeModelEvaluator:
                 continue
             
             # Split data
-            X_train_bt = X_sorted[:train_end_idx]
-            X_test_bt = X_sorted[start_idx:end_idx]
-            y_train_bt = y_sorted[:train_end_idx]
-            y_test_bt = y_sorted[start_idx:end_idx]
+            # Fix pandas indexing issue: use iloc for row selection with integer indices
+            if hasattr(X_sorted, 'iloc'):
+                X_train_bt = X_sorted.iloc[:train_end_idx]
+                X_test_bt = X_sorted.iloc[start_idx:end_idx]
+                y_train_bt = y_sorted.iloc[:train_end_idx] if hasattr(y_sorted, 'iloc') else y_sorted[:train_end_idx]
+                y_test_bt = y_sorted.iloc[start_idx:end_idx] if hasattr(y_sorted, 'iloc') else y_sorted[start_idx:end_idx]
+            else:
+                X_train_bt = X_sorted[:train_end_idx]
+                X_test_bt = X_sorted[start_idx:end_idx]
+                y_train_bt = y_sorted[:train_end_idx]
+                y_test_bt = y_sorted[start_idx:end_idx]
             
             try:
                 # Train model on historical data

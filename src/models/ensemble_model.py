@@ -349,8 +349,13 @@ class EarthquakeEnsembleModel:
         cv_scores = []
         
         for train_idx, val_idx in kfold.split(X):
-            X_fold_train, X_fold_val = X[train_idx], X[val_idx]
-            y_fold_train, y_fold_val = y[train_idx], y[val_idx]
+            # Fix pandas indexing issue: use iloc for row selection with integer indices
+            if hasattr(X, 'iloc'):
+                X_fold_train, X_fold_val = X.iloc[train_idx], X.iloc[val_idx]
+                y_fold_train, y_fold_val = y.iloc[train_idx], y.iloc[val_idx]
+            else:
+                X_fold_train, X_fold_val = X[train_idx], X[val_idx]
+                y_fold_train, y_fold_val = y[train_idx], y[val_idx]
             
             # Create temporary ensemble for this fold
             temp_ensemble = EarthquakeEnsembleModel(self.random_state)
